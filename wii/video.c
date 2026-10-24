@@ -1,6 +1,7 @@
 #include "wii_video.h"
 
 #include <gccore.h>
+#include <ogc/conf.h>
 
 #include <string.h>
 
@@ -8,13 +9,45 @@
 
 #define GX_FIFO_SIZE (256 * 1024)
 #define XFB_COUNT 2
+#define RGB565_LEVELS 256
 
 static GXRModeObj *video_mode;
 static void *framebuffers[XFB_COUNT];
 static unsigned displayed_framebuffer;
+static bool display_is_widescreen;
+static uint16_t viewport_x;
+static uint16_t viewport_width;
 static uint8_t gx_fifo[GX_FIFO_SIZE] __attribute__((aligned(32)));
 static uint16_t texture_pixels[SCREEN_WIDTH * SCREEN_HEIGHT] __attribute__((aligned(32)));
+static uint16_t red565[RGB565_LEVELS];
+static uint16_t green565[RGB565_LEVELS];
+static uint16_t blue565[RGB565_LEVELS];
 static GXTexObj game_texture;
+
+static void init_color_conversion(void) {
+    // The renderer supplies the project's original 64-color NES master
+    // palette as RGB888. These tables apply the same RGB565 quantization
+    // as the previous direct shifts; they do not tint or replace the palette.
+    for (unsigned value = 0; value < RGB565_LEVELS; value++) {
+        red565[value] = (uint16_t)((value >> 3) << 11);
+        green565[value] = (uint16_t)((value >> 2) << 5);
+        blue565[value] = (uint16_t)(value >> 3);
+    }
+}
+
+static void set_game_viewport(void) {
+    uint16_t framebuffer_width = video_mode->fbWidth;
+    viewport_width = display_is_widescreen
+        ? (uint16_t)(((uint32_t)framebuffer_width * 3u) / 4u)
+        : framebuffer_width;
+    viewport_x = (uint16_t)((framebuffer_width - viewport_width) / 2u);
+
+    // Wii widescreen is anamorphic: drawing into the centered 3/4-width area
+    // keeps the game itself 4:3 while leaving black pillarboxes on a 16:9 TV.
+    GX_SetViewport((f32)viewport_x, 0.0f, (f32)viewport_width,
+                   (f32)video_mode->efbHeight, 0.0f, 1.0f);
+    GX_SetScissor(viewport_x, 0, viewport_width, video_mode->efbHeight);
+}
 
 static void setup_gx(void) {
     GX_Init(gx_fifo, sizeof(gx_fifo));
@@ -64,10 +97,21 @@ static void setup_gx(void) {
                   GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE);
     GX_InitTexObjLOD(&game_texture, GX_NEAR, GX_NEAR, 0.0f, 0.0f, 0.0f,
                      GX_FALSE, GX_FALSE, GX_ANISO_1);
+
+    // Seed a black EFB so the first 4:3 frame has clean pillarboxes too.
+    GX_DrawDone();
+    GX_CopyDisp(framebuffers[0], GX_TRUE);
+    GX_DrawDone();
+    set_game_viewport();
 }
 
 bool wii_video_init(void) {
     VIDEO_Init();
+    display_is_widescreen = false;
+    if (CONF_Init() == CONF_ERR_OK) {
+        display_is_widescreen = CONF_GetAspectRatio() == CONF_ASPECT_16_9;
+    }
+
     video_mode = VIDEO_GetPreferredMode(NULL);
     if (video_mode == NULL) return false;
 
@@ -87,6 +131,7 @@ bool wii_video_init(void) {
     if (video_mode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
 
     displayed_framebuffer = 0;
+    init_color_conversion();
     setup_gx();
     return true;
 }
@@ -94,15 +139,24 @@ bool wii_video_init(void) {
 static void upload_rgb_frame(const uint8_t *rgb_frame) {
     const unsigned tiles_per_row = SCREEN_WIDTH / 4;
 
-    for (unsigned y = 0; y < SCREEN_HEIGHT; y++) {
-        for (unsigned x = 0; x < SCREEN_WIDTH; x++) {
-            unsigned source = (y * SCREEN_WIDTH + x) * 3;
-            unsigned tile = ((y / 4) * tiles_per_row + (x / 4)) * 16;
-            unsigned pixel = (y % 4) * 4 + (x % 4);
-            uint16_t red = (uint16_t)(rgb_frame[source] >> 3);
-            uint16_t green = (uint16_t)(rgb_frame[source + 1] >> 2);
-            uint16_t blue = (uint16_t)(rgb_frame[source + 2] >> 3);
-            texture_pixels[tile + pixel] = (uint16_t)((red << 11) | (green << 5) | blue);
+    // GX RGB565 textures are arranged in 4x4 tiles. Walk source rows inside
+    // each tile so the swizzle and conversion are done without per-pixel
+    // division/modulo or repeated tile-index calculations.
+    for (unsigned tile_y = 0; tile_y < SCREEN_HEIGHT; tile_y += 4) {
+        unsigned tile_row = (tile_y / 4) * tiles_per_row;
+        for (unsigned tile_x = 0; tile_x < SCREEN_WIDTH; tile_x += 4) {
+            unsigned destination = (tile_row + tile_x / 4) * 16;
+            for (unsigned row = 0; row < 4; row++) {
+                unsigned source = ((tile_y + row) * SCREEN_WIDTH + tile_x) * 3;
+                unsigned output = destination + row * 4;
+                for (unsigned column = 0; column < 4; column++) {
+                    uint8_t red = rgb_frame[source + column * 3];
+                    uint8_t green = rgb_frame[source + column * 3 + 1];
+                    uint8_t blue = rgb_frame[source + column * 3 + 2];
+                    texture_pixels[output + column] = (uint16_t)(
+                        red565[red] | green565[green] | blue565[blue]);
+                }
+            }
         }
     }
 

@@ -8,6 +8,7 @@
 #include "common.h"
 #include "cpu.h"
 #include "debug_chr.h"
+#include "loading.h"
 #include "render.h"
 #include "sound.h"
 #include "wii_audio.h"
@@ -21,6 +22,9 @@
 #ifndef ROM_PATH
 #define ROM_PATH "sd:/smb.nes"
 #endif
+#ifndef WII_GAME_TITLE
+#define WII_GAME_TITLE "Super Mario Bros."
+#endif
 
 #define NES_RIGHT  0x80
 #define NES_LEFT   0x40
@@ -30,6 +34,12 @@
 #define NES_SELECT 0x04
 #define NES_B      0x02
 #define NES_A      0x01
+
+// Shared system controls exposed by every supported WPAD family: Wii Remote
+// and Nunchuk use the WPAD buttons; Classic and Pro use the CLASSIC variants.
+#define WPAD_NES_START_BUTTONS  (WPAD_BUTTON_PLUS | WPAD_CLASSIC_BUTTON_PLUS)
+#define WPAD_NES_SELECT_BUTTONS (WPAD_BUTTON_MINUS | WPAD_CLASSIC_BUTTON_MINUS)
+#define WPAD_HOME_BUTTONS       (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)
 
 #define WII_CONTROLLER_COUNT 4
 
@@ -46,9 +56,9 @@ static uint8_t map_buttons(u32 held) {
     if (held & (WPAD_BUTTON_2 | WPAD_CLASSIC_BUTTON_A)) state |= NES_A;
     if (held & (WPAD_BUTTON_1 | WPAD_CLASSIC_BUTTON_B | WPAD_CLASSIC_BUTTON_Y)) state |= NES_B;
 
-    // Plus/minus retain the game's Start/Select functions on both layouts.
-    if (held & (WPAD_BUTTON_PLUS | WPAD_CLASSIC_BUTTON_PLUS)) state |= NES_START;
-    if (held & (WPAD_BUTTON_MINUS | WPAD_CLASSIC_BUTTON_MINUS)) state |= NES_SELECT;
+    // Plus maps to NES Start and minus to NES Select on both controller families.
+    if (held & WPAD_NES_START_BUTTONS) state |= NES_START;
+    if (held & WPAD_NES_SELECT_BUTTONS) state |= NES_SELECT;
 
     return state;
 }
@@ -61,7 +71,7 @@ static uint8_t poll_controller(bool *should_exit) {
         u32 held = WPAD_ButtonsHeld(channel);
         u32 pressed = WPAD_ButtonsDown(channel);
         state |= map_buttons(held);
-        if (pressed & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)) {
+        if (pressed & WPAD_HOME_BUTTONS) {
             *should_exit = true;
         }
     }
@@ -77,17 +87,25 @@ static void init_controllers(void) {
 }
 
 int main(void) {
+    if (!wii_video_init()) return 1;
+    wii_loading_screen_show(WII_GAME_TITLE, "PREPARING SD CARD");
+
     init_controllers();
     fatInitDefault();
+    wii_loading_screen_show(WII_GAME_TITLE, "READING GAME ROM AND CHR GRAPHICS");
 
     cpu_init();
     apu_init(WII_AUDIO_SAMPLE_RATE);
 
 #ifdef MAPPER
-    if (load_cartridge(ROM_PATH) != 0) return 1;
+    if (load_cartridge(ROM_PATH) != 0) {
+        wii_loading_screen_show(WII_GAME_TITLE, "ROM LOAD FAILED - CHECK SD CARD");
+        return 1;
+    }
     mapper_init(cartridge_mapper);
 #else
     if (read_chr_rom((char *)ROM_PATH) != 0) {
+        wii_loading_screen_show(WII_GAME_TITLE, "ROM UNAVAILABLE - USING DEBUG TILES");
         uint8_t chr[DEBUG_CHR_SIZE];
         debug_chr_generate(chr);
         video_init(chr);
@@ -95,7 +113,7 @@ int main(void) {
     }
 #endif
 
-    if (!wii_video_init()) return 1;
+    wii_loading_screen_show(WII_GAME_TITLE, "STARTING GAME");
     wii_audio_init();
     cpu_reset_entry();
 
@@ -112,5 +130,6 @@ int main(void) {
 
     wii_audio_shutdown();
     wii_video_shutdown();
+    // Returning normally lets the Homebrew Channel resume its app menu.
     return 0;
 }

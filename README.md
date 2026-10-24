@@ -72,6 +72,26 @@ folder and add `GAME=metroid`: `make codegen GAME=metroid` recompiles it into
 states to `metroid.sav`). Likewise for Super Mario Bros. 3 with `smb3.nes`
 and `GAME=smb3` (`codegen/smb3/`, `./smb3`).
 
+### Wii Homebrew
+
+With devkitPro/devkitPPC and libogc installed, place your legally obtained ROM
+in the repository root and build the matching Wii app:
+
+```bash
+make wii                         # Super Mario Bros. (smb.nes)
+make wii GAME=metroid ROM=metroid.nes
+make wii GAME=smb3 ROM=smb3.nes
+```
+
+Each build shows a short ROM/CHR loading screen, then produces an SD-card-ready
+Homebrew Channel folder at `build/wii/apps/<game>/` containing `boot.dol`,
+`meta.xml`, and the correctly sized 128×48 `icon.png`. Copy that folder into
+`sd:/apps/` and put the matching ROM (`smb.nes`, `metroid.nes`, or `smb3.nes`)
+in the SD card root. On every supported controller, `+` maps to NES Start,
+`−` maps to NES Select, and HOME returns to the Homebrew Channel menu. Wii
+Remote held sideways: D-Pad moves, `1` runs/fires, `2` jumps. Classic
+Controller/Pro: D-Pad moves, `B` or `Y` runs/fires, `A` jumps.
+
 ## WebAssembly
 
 The page recompiles your ROM in the browser: the recompiler (MoonBit compiled

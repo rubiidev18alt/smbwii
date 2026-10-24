@@ -10,7 +10,7 @@
 extern uint8_t frame[FRAME_BUFFER_SIZE];
 
 // The NES master palette: 64 RGB triples.
-extern uint8_t COLOR_PALETTE[];
+extern const uint8_t COLOR_PALETTE[];
 
 void render_init(void);
 void render_frame(void);

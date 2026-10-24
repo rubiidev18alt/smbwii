@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>Super Mario Bros.</name>
+  <coder>SMBWii project</coder>
+  <version>0.1</version>
+  <short_description>Run, jump, rescue the Princess.</short_description>
+  <long_description>Bowser's forces have overrun the Mushroom Kingdom and captured Princess Toadstool. Guide Mario through the worlds, overcome enemies and hazards, and rescue the Princess. Wii Remote held sideways: D-Pad moves, 1 runs, 2 jumps, + is NES Start, - is NES Select, HOME returns to the Homebrew Channel menu. Classic Controller or Pro: D-Pad moves, B or Y runs, A jumps, + is NES Start, - is NES Select, HOME returns to the Homebrew Channel menu. Place smb.nes in the SD card root.</long_description>
+  <ahb_access/>
+</app>
