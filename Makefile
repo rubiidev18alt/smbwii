@@ -15,6 +15,7 @@ GAME_DIR = codegen/metroid
 NATIVE_ROUTINES =
 # it drives the PPU through its registers and switches banks (MMC1)
 GAME_FLAGS = -DPPU_BUS -DMAPPER -DGAME_TITLE='"Metroid"' -DROM_PATH='"$(ROM)"' -DSAVE_FILE='"metroid.sav"'
+WII_GAME_FLAGS = -DPPU_BUS -DMAPPER -DROM_PATH='"sd:/$(notdir $(ROM))"'
 GAME_SOURCES = codegen/lib/ppu_bus.c codegen/lib/mapper.c codegen/lib/cartridge.c
 else ifeq ($(GAME),smb3)
 ROM ?= smb3.nes
@@ -23,6 +24,7 @@ GAME_DIR = codegen/smb3
 NATIVE_ROUTINES =
 # the PPU registers too, and MMC3's banks and scanline IRQ
 GAME_FLAGS = -DPPU_BUS -DMAPPER -DGAME_TITLE='"Super Mario Bros. 3"' -DROM_PATH='"$(ROM)"' -DSAVE_FILE='"smb3.sav"' -DREC_FILE='"rec/smb3.rec"'
+WII_GAME_FLAGS = -DPPU_BUS -DMAPPER -DROM_PATH='"sd:/$(notdir $(ROM))"'
 GAME_SOURCES = codegen/lib/ppu_bus.c codegen/lib/mapper.c codegen/lib/cartridge.c
 else
 ROM ?= smb.nes
@@ -30,6 +32,7 @@ MAP = maps/smb.map
 GAME_DIR = codegen/game
 NATIVE_ROUTINES = --native codegen/native/routines.txt
 GAME_FLAGS =
+WII_GAME_FLAGS = -DROM_PATH='"sd:/$(notdir $(ROM))"'
 GAME_SOURCES = codegen/native/display.c
 endif
 
@@ -61,7 +64,28 @@ SOURCES += codegen/lib/state.c
 SOURCES += codegen/lib/debug_chr.c
 MAIN = codegen/main.c
 
-.PHONY: codegen header clean gpu-check runtime-wasm runtime-cartridge-wasm apu-wasm game-wasm web replay interpreter
+# Wii homebrew build. This is only the game runtime: it uses libogc's GX,
+# controller and audio APIs and does not build the desktop or web front ends.
+WII_CC ?= $(if $(DEVKITPPC),$(DEVKITPPC)/bin/powerpc-eabi-gcc,powerpc-eabi-gcc)
+WII_ELF2DOL ?= $(if $(DEVKITPPC),$(DEVKITPPC)/bin/elf2dol,elf2dol)
+WII_BUILD_DIR ?= build/wii
+WII_ELF = $(WII_BUILD_DIR)/$(GAME).elf
+WII_DOL = $(WII_BUILD_DIR)/$(GAME).dol
+WII_CFLAGS = -O3 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable
+WII_CFLAGS += -Wno-unused-function -Wno-unused-value -std=gnu99
+WII_CFLAGS += -DGEKKO -mcpu=750 -meabi -mhard-float -mrvl -ffunction-sections -fdata-sections
+WII_INCLUDES = -I$(GAME_DIR) -Icodegen/lib -Icodegen/native -Iwii
+WII_INCLUDES += $(if $(DEVKITPRO),-I$(DEVKITPRO)/libogc/include)
+WII_LDFLAGS = -mrvl -Wl,--gc-sections -Wl,-Map,$(WII_BUILD_DIR)/$(GAME).map
+WII_LIB_DIRS = $(if $(DEVKITPRO),-L$(DEVKITPRO)/libogc/lib/wii)
+WII_LIBS = -lfat -lwiiuse -lbte -logc -lm
+WII_SOURCES = $(GAME_DIR)/code.c $(GAME_DIR)/data.c
+WII_SOURCES += codegen/lib/cpu.c codegen/lib/video.c codegen/lib/render.c
+WII_SOURCES += $(GAME_SOURCES) codegen/lib/common.c codegen/lib/apu.c
+WII_SOURCES += codegen/lib/sound.c codegen/lib/debug_chr.c
+WII_SOURCES += wii/main.c wii/video.c wii/audio.c
+
+.PHONY: codegen header clean gpu-check runtime-wasm runtime-cartridge-wasm apu-wasm game-wasm web replay interpreter wii
 
 # The game is recompiled from your ROM into codegen/game, or codegen/metroid
 # or codegen/smb3 with GAME=metroid or GAME=smb3 (not in the repository).
@@ -74,6 +98,14 @@ header:
 
 build: clean
 	$(CC) $(CFLAGS) -o $(GAME) ${MAIN} codegen/gpu.c $(SOURCES) codegen/lib/common.c $(GC_FLAGS) $(RAYLIB_FLAGS) $(OBJECTS)
+
+# Build a standalone Wii homebrew DOL from the generated game and the
+# software renderer. Supply a legally obtained ROM for codegen and keep the
+# same ROM filename at the root of the Wii SD card for its graphics/mapper.
+wii: codegen
+	@mkdir -p $(WII_BUILD_DIR)
+	$(WII_CC) $(WII_CFLAGS) $(WII_INCLUDES) $(WII_GAME_FLAGS) $(WII_LDFLAGS) $(WII_LIB_DIRS) -o $(WII_ELF) $(WII_SOURCES) $(WII_LIBS)
+	$(WII_ELF2DOL) $(WII_ELF) $(WII_DOL)
 
 # Replays a recording headlessly (games that drive the PPU registers, see
 # codegen/replay.c): ./replay metroid.nes --rec rec/metroid.rec
@@ -135,3 +167,4 @@ hash: clean
 
 clean:
 	rm -f smb metroid smb3 hash gpu_check replay interpreter smb.wasm audio_queue
+	rm -rf build/wii
