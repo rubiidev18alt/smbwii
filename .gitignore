@@ -1,4 +1,5 @@
 target/
+build/wii/
 .mooncakes/
 used_insts.txt
 smb
