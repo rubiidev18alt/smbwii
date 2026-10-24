@@ -19,12 +19,10 @@ static unsigned current_buffer;
 static void render_audio(int16_t *destination) {
     apu_render(mono_samples, AUDIO_BUFFER_FRAMES);
 
+    // apu_render() already clamps its output to [-1, 1], so the PCM
+    // conversion can avoid repeating those bounds checks in the DMA callback.
     for (unsigned i = 0; i < AUDIO_BUFFER_FRAMES; i++) {
-        float sample = mono_samples[i];
-        if (sample > 1.0f) sample = 1.0f;
-        if (sample < -1.0f) sample = -1.0f;
-
-        int16_t pcm = (int16_t)(sample * 32767.0f);
+        int16_t pcm = (int16_t)(mono_samples[i] * 32767.0f);
         destination[i * AUDIO_CHANNELS] = pcm;
         destination[i * AUDIO_CHANNELS + 1] = pcm;
     }

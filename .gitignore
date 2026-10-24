@@ -2,7 +2,7 @@ target/
 build/wii/
 .mooncakes/
 used_insts.txt
-smb
+/smb
 hash
 gpu_check
 smb.wasm
@@ -37,6 +37,6 @@ web/apu.wasm
 codegen/metroid/
 replay
 interpreter
-metroid
+/metroid
 codegen/smb3/
-smb3
+/smb3

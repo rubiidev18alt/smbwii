@@ -15,7 +15,8 @@ GAME_DIR = codegen/metroid
 NATIVE_ROUTINES =
 # it drives the PPU through its registers and switches banks (MMC1)
 GAME_FLAGS = -DPPU_BUS -DMAPPER -DGAME_TITLE='"Metroid"' -DROM_PATH='"$(ROM)"' -DSAVE_FILE='"metroid.sav"'
-WII_GAME_FLAGS = -DPPU_BUS -DMAPPER -DROM_PATH='"sd:/$(notdir $(ROM))"'
+WII_GAME_FLAGS = -DPPU_BUS -DMAPPER -DWII_GAME_TITLE='"Metroid"' -DROM_PATH='"sd:/$(notdir $(ROM))"'
+WII_HBC_DIR = wii/hbc/metroid
 GAME_SOURCES = codegen/lib/ppu_bus.c codegen/lib/mapper.c codegen/lib/cartridge.c
 else ifeq ($(GAME),smb3)
 ROM ?= smb3.nes
@@ -24,7 +25,8 @@ GAME_DIR = codegen/smb3
 NATIVE_ROUTINES =
 # the PPU registers too, and MMC3's banks and scanline IRQ
 GAME_FLAGS = -DPPU_BUS -DMAPPER -DGAME_TITLE='"Super Mario Bros. 3"' -DROM_PATH='"$(ROM)"' -DSAVE_FILE='"smb3.sav"' -DREC_FILE='"rec/smb3.rec"'
-WII_GAME_FLAGS = -DPPU_BUS -DMAPPER -DROM_PATH='"sd:/$(notdir $(ROM))"'
+WII_GAME_FLAGS = -DPPU_BUS -DMAPPER -DWII_GAME_TITLE='"Super Mario Bros. 3"' -DROM_PATH='"sd:/$(notdir $(ROM))"'
+WII_HBC_DIR = wii/hbc/smb3
 GAME_SOURCES = codegen/lib/ppu_bus.c codegen/lib/mapper.c codegen/lib/cartridge.c
 else
 ROM ?= smb.nes
@@ -32,7 +34,8 @@ MAP = maps/smb.map
 GAME_DIR = codegen/game
 NATIVE_ROUTINES = --native codegen/native/routines.txt
 GAME_FLAGS =
-WII_GAME_FLAGS = -DROM_PATH='"sd:/$(notdir $(ROM))"'
+WII_GAME_FLAGS = -DWII_GAME_TITLE='"Super Mario Bros."' -DROM_PATH='"sd:/$(notdir $(ROM))"'
+WII_HBC_DIR = wii/hbc/smb
 GAME_SOURCES = codegen/native/display.c
 endif
 
@@ -71,9 +74,10 @@ WII_ELF2DOL ?= $(if $(DEVKITPPC),$(DEVKITPPC)/bin/elf2dol,elf2dol)
 WII_BUILD_DIR ?= build/wii
 WII_ELF = $(WII_BUILD_DIR)/$(GAME).elf
 WII_DOL = $(WII_BUILD_DIR)/$(GAME).dol
+WII_APP_DIR = $(WII_BUILD_DIR)/apps/$(GAME)
 WII_CFLAGS = -O3 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable
 WII_CFLAGS += -Wno-unused-function -Wno-unused-value -std=gnu99
-WII_CFLAGS += -DGEKKO -mcpu=750 -meabi -mhard-float -mrvl -ffunction-sections -fdata-sections
+WII_CFLAGS += -DGEKKO -mcpu=750 -meabi -mhard-float -mrvl -ffunction-sections -fdata-sections -flto
 WII_INCLUDES = -I$(GAME_DIR) -Icodegen/lib -Icodegen/native -Iwii
 WII_INCLUDES += $(if $(DEVKITPRO),-I$(DEVKITPRO)/libogc/include)
 WII_LDFLAGS = -mrvl -Wl,--gc-sections -Wl,-Map,$(WII_BUILD_DIR)/$(GAME).map
@@ -83,7 +87,7 @@ WII_SOURCES = $(GAME_DIR)/code.c $(GAME_DIR)/data.c
 WII_SOURCES += codegen/lib/cpu.c codegen/lib/video.c codegen/lib/render.c
 WII_SOURCES += $(GAME_SOURCES) codegen/lib/common.c codegen/lib/apu.c
 WII_SOURCES += codegen/lib/sound.c codegen/lib/debug_chr.c
-WII_SOURCES += wii/main.c wii/video.c wii/audio.c
+WII_SOURCES += wii/main.c wii/video.c wii/audio.c wii/loading.c
 
 .PHONY: codegen header clean gpu-check runtime-wasm runtime-cartridge-wasm apu-wasm game-wasm web replay interpreter wii
 
@@ -99,13 +103,16 @@ header:
 build: clean
 	$(CC) $(CFLAGS) -o $(GAME) ${MAIN} codegen/gpu.c $(SOURCES) codegen/lib/common.c $(GC_FLAGS) $(RAYLIB_FLAGS) $(OBJECTS)
 
-# Build a standalone Wii homebrew DOL from the generated game and the
-# software renderer. Supply a legally obtained ROM for codegen and keep the
-# same ROM filename at the root of the Wii SD card for its graphics/mapper.
+# Build a Wii DOL plus an SD-card-ready Homebrew Channel app folder. Supply
+# a legally obtained ROM for codegen and keep the same ROM filename at the
+# root of the Wii SD card for its graphics/mapper.
 wii: codegen
-	@mkdir -p $(WII_BUILD_DIR)
+	@mkdir -p $(WII_BUILD_DIR) $(WII_APP_DIR)
 	$(WII_CC) $(WII_CFLAGS) $(WII_INCLUDES) $(WII_GAME_FLAGS) $(WII_LDFLAGS) $(WII_LIB_DIRS) -o $(WII_ELF) $(WII_SOURCES) $(WII_LIBS)
 	$(WII_ELF2DOL) $(WII_ELF) $(WII_DOL)
+	cp $(WII_DOL) $(WII_APP_DIR)/boot.dol
+	cp $(WII_HBC_DIR)/meta.xml $(WII_APP_DIR)/meta.xml
+	cp $(WII_HBC_DIR)/icon.png $(WII_APP_DIR)/icon.png
 
 # Replays a recording headlessly (games that drive the PPU registers, see
 # codegen/replay.c): ./replay metroid.nes --rec rec/metroid.rec

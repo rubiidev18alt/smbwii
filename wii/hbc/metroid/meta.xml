@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>Metroid</name>
+  <coder>SMBWii project</coder>
+  <version>0.1</version>
+  <short_description>Explore Zebes and defeat the Metroids.</short_description>
+  <long_description>Samus Aran explores the hostile planet Zebes to destroy the Metroid threat. Wii Remote held sideways: D-Pad moves, 1 fires, 2 jumps, + is NES Start, - is NES Select, HOME returns to the Homebrew Channel menu. Classic Controller or Pro: D-Pad moves, B or Y fires, A jumps, + is NES Start, - is NES Select, HOME returns to the Homebrew Channel menu. Place metroid.nes in the SD card root.</long_description>
+  <ahb_access/>
+</app>
